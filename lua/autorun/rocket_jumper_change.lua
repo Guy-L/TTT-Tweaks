@@ -23,6 +23,7 @@ SOFTWARE.
 */
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
+local RJ_USES_AMMO = CreateConVar("ttt_rocket_jumper_limit_ammo", 0, CVAR_FLAGS, "Whether the Jumper has limited ammo.", 0, 1)
 local RJ_BASE_AMMO = CreateConVar("ttt_rocket_jumper_ammo", 60, CVAR_FLAGS, "How much ammo the Jumper starts with.", 1, 1000)
 local RJ_CVAR_UPDATE_MSG = "TTT_Tweaks_RocketJumperAmmoCvarUpdate"
 
@@ -30,41 +31,58 @@ local RJ_HIT_GROUND_HOOK = "market_gardener__DropMeleeOnFall" -- original addon
 local RJ_CLASSNAME = "weapon_ttt_rocket_jumper"
 
 function RJ_ApplyChanges(firstTimeSetup)
+    print("[TTT-Tweaks] Applying Rocket Jumper changes; first time setup:", firstTimeSetup)
     local swep = weapons.GetStored(RJ_CLASSNAME)
-    local ammoVal = RJ_BASE_AMMO:GetInt()
-    print("[TTT-Tweaks] Changing Rocket Jumper ammo limit to", ammoVal)
-
-    swep.Primary.ClipSize    = ammoVal
-    swep.Primary.DefaultClip = ammoVal
-    if not firstTimeSetup then return end -- first time setup below
-    if CLIENT then swep.DrawAmmo = true end
 
     -- for idempotency
     RJ_OG_JUMPERFIRE = RJ_OG_JUMPERFIRE or swep.JumperFire
 
-    swep.JumperFire = function(self)
-        local ply = self:GetOwner()
-        local worldShootPos = ply:GetShootPos()
-        local viewTargetPos = ply:GetAimVector() * 200
-        local tr = util.TraceLine({
-            start = worldShootPos,
-            endpos = worldShootPos + viewTargetPos,
-            filter = ply,
-            mask = MASK_NPCSOLID_BRUSHONLY
-        }) -- same "in range" criteria as original addon (local func)
+    if RJ_USES_AMMO:GetBool() then
+        local ammoVal = RJ_BASE_AMMO:GetInt()
+        print("[TTT-Tweaks] Changing Rocket Jumper ammo limit to", ammoVal)
 
-        if tr.Fraction < 1 and self:CanPrimaryAttack() then
-            RJ_OG_JUMPERFIRE(self)
-            self:SetClip1(self:Clip1() - 1)
+        swep.Primary.ClipSize    = ammoVal
+        swep.Primary.DefaultClip = ammoVal
+        if CLIENT then swep.DrawAmmo = true end
+
+        swep.JumperFire = function(self)
+            local ply = self:GetOwner()
+            local worldShootPos = ply:GetShootPos()
+            local viewTargetPos = ply:GetAimVector() * 200
+            local tr = util.TraceLine({
+                start = worldShootPos,
+                endpos = worldShootPos + viewTargetPos,
+                filter = ply,
+                mask = MASK_NPCSOLID_BRUSHONLY
+            }) -- same "in range" criteria as original addon (local func)
+
+            if tr.Fraction < 1 and self:CanPrimaryAttack() then
+                RJ_OG_JUMPERFIRE(self)
+                self:SetClip1(self:Clip1() - 1)
+            end
         end
+
+    else
+        swep.Primary.ClipSize    = -1
+        swep.Primary.DefaultClip = -1
+        if CLIENT then swep.DrawAmmo = false end
+
+        swep.JumperFire = RJ_OG_JUMPERFIRE
     end
+
+    ---------------------------------------------------------------
+    if not firstTimeSetup then return end -- first time setup below
 
     function swep:AddToSettingsMenu(parent)
         local formTweaks = vgui.CreateTTT2Form(parent, "TTT Tweaks")
 
+        formTweaks:MakeCheckBox({
+            serverConvar = "ttt_rocket_jumper_limit_ammo",
+            label = "Limit rocket ammo"
+        })
         formTweaks:MakeSlider({
             serverConvar = "ttt_rocket_jumper_ammo",
-            label = "Base ammo",
+            label = "Base ammo if limited",
             min = 1, max = 1000, decimal = 0
         })
     end
@@ -105,8 +123,11 @@ if SERVER then
         net.Broadcast()
     end
 
-    cvars.RemoveChangeCallback(RJ_BASE_AMMO:GetName(), RJ_BASE_AMMO:GetName())
-    cvars.AddChangeCallback(RJ_BASE_AMMO:GetName(), cvarChangeNotify, RJ_BASE_AMMO:GetName())
+    local rjCvars = {RJ_USES_AMMO, RJ_BASE_AMMO}
+    for _, cvar in ipairs(rjCvars) do
+        cvars.RemoveChangeCallback(cvar:GetName(), cvar:GetName())
+        cvars.AddChangeCallback(cvar:GetName(), cvarChangeNotify, cvar:GetName())
+    end
 
 elseif CLIENT then
     net.Receive(RJ_CVAR_UPDATE_MSG, function()
