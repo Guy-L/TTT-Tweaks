@@ -28,8 +28,11 @@ SOFTWARE.
 
 if SERVER then
 	local function PostPlayerSay(speaker, text, teamOnly, channel, dmTarget)
-		for _, ply in ipairs( player.GetBots() ) do
-			if ply:GetPlayerInfo().ishltv then
+		local botplayers = player.GetBots()
+        if botplayers == nil and #botplayers < 1 then return end
+
+		for _, ply in ipairs( botplayers ) do
+			if IsValid(ply) and ply:GetPlayerInfo().ishltv then
 				net.Start( "customchat.say", false )
 				net.WriteString( util.TableToJSON( {
 					channel = channel,
@@ -37,12 +40,12 @@ if SERVER then
 				} ) )
 				net.WriteEntity( speaker )
 				net.Send( ply )
-				-- print("DEBUG: Message sent to SourceTV")
+                -- print("DEBUG: Message sent to SourceTV")
 			end
 		end
 	end
 
-	if util.NetworkStringToID(customchat.say) > 0 then
+	if util.NetworkStringToID("customchat.say") > 0 then
 		hook.Add("PostPlayerSay", "gmod_custom_chat_to_sourcetv", PostPlayerSay)
 	end
 end
