@@ -42,5 +42,7 @@ if SERVER then
 		end
 	end
 
-	hook.Add("PostPlayerSay", "gmod_custom_chat_to_sourcetv", PostPlayerSay)
+	if util.NetworkStringToID(customchat.say) > 0 then
+		hook.Add("PostPlayerSay", "gmod_custom_chat_to_sourcetv", PostPlayerSay)
+	end
 end
